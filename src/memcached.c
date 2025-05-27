@@ -16,7 +16,7 @@
 #include <sys/uio.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
-#include <protocol_binary.h>
+#include <memcached/protocol_binary.h>
 #include <endian.h>
 #include <lua.h>
 #include <lauxlib.h>
@@ -127,14 +127,14 @@ static const luaL_Reg functions[] = {
 */
 
 static int buffer_require (lua_State *L, memcached_buffer_t * b, size_t cnt) {
-	char   *new;
+	char   *bnew;
 	size_t  required, capacity;
 
 	if (cnt > SIZE_MAX - b->pos || b->pos + cnt > MEMCACHED_BUFFER_MAX) {
 		return luaL_error(L, "buffer overflow");
 	}
 	required = b->pos + cnt;
-	if (required <= b->capacity) {
+	if (b->capacity >= required) {
 		return 0;
 	}
 
@@ -143,7 +143,7 @@ static int buffer_require (lua_State *L, memcached_buffer_t * b, size_t cnt) {
 	if (capacity == 0) {
 		capacity = MEMCACHED_BUFFER_SIZE;
 	}
-	while (capacity < required) {
+	do {
 		if (capacity < 64 * 1024) {
 			/* double for small buffers */
 			if (capacity <= SIZE_MAX / 2) {
@@ -159,14 +159,14 @@ static int buffer_require (lua_State *L, memcached_buffer_t * b, size_t cnt) {
 				capacity = required;
 			}
 		}
-	}
+	} while (capacity < required);
 
 	/* reallocate */
-	new = realloc(b->b, capacity);
-	if (!new) {
+	bnew = realloc(b->b, capacity);
+	if (!bnew) {
 		return luaL_error(L, "out of memory");
 	}
-	b->b = new;
+	b->b = bnew;
 	b->capacity = capacity;
 
 	return 0;
@@ -291,7 +291,7 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 			memcpy(&b->b[b->pos], &t, sizeof(t));
 			b->pos += sizeof(t);
 			lua_pop(L, 1);
-			return 0;
+			break;
 		}
 
 		/* analyze and write table */
@@ -332,10 +332,10 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 }
 
 static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
+	size_t    len;
 	double    d;
 	int64_t   i;
 	uint64_t  nlen, narr, nrec, t;
-	size_t    len;
 
 	buffer_avail(L, b, 1);
 	switch (b->b[b->pos++]) {
@@ -377,9 +377,10 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 		break;
 
 	case LUA_TTABLE:
+		luaL_checkstack(L, 3, "decoding table");
+
 		/* get number of array and record elements */
 		buffer_avail(L, b, sizeof(narr) + sizeof(nrec));
-		luaL_checkstack(L, 3, "decoding table");
 		memcpy(&narr, &b->b[b->pos], sizeof(narr));
 		b->pos += sizeof(narr);
 		narr = be64toh(narr);
@@ -578,8 +579,8 @@ static int getsocket (lua_State *L, memcached_t *m) {
 		result = poll(&pfd, 1, m->timeout);
 		if (result == 1) {
 			/* check outcome */
-		   	len = sizeof(err);
-    		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == -1) {
+			len = sizeof(err);
+			if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == -1) {
 				err = errno;
 				close(fd);
 				continue;
@@ -602,7 +603,7 @@ static int getsocket (lua_State *L, memcached_t *m) {
 			goto interrupted;
 		}
 
-		/* poll timedout, or failed for other reason */
+		/* poll timed out, or failed for other reason */
 		err = result == 0 ? ETIMEDOUT : errno;
 		close(fd);
 	}
@@ -619,7 +620,7 @@ static int getsocket (lua_State *L, memcached_t *m) {
 }
 
 static ssize_t checkresult (lua_State *L, memcached_t *m, ssize_t result) {
-	int err;
+	int  err;
 
 	if (result > 0) {
 		return result;
@@ -700,8 +701,8 @@ static int getstring (lua_State *L, int index, const char *field, const char *df
 			break;
 
 		default:
-			return luaL_error(L, "bad field '%s' (string expected, got %s)",
-					field, lua_typename(L, lua_type(L, -1)));
+			return luaL_error(L, "bad field '%s' (string expected, got %s)", field,
+						luaL_typename(L, -1));
 		}
 	}
 	return luaL_ref(L, LUA_REGISTRYINDEX);
@@ -721,8 +722,8 @@ static int getfunction (lua_State *L, int index, const char *field, lua_CFunctio
 			break;
 
 		default:
-			return luaL_error(L, "bad field '%s' (function expected, got %s)",
-					field, lua_typename(L, lua_type(L, -1)));
+			return luaL_error(L, "bad field '%s' (function expected, got %s)", field, 
+					luaL_typename(L, -1));
 		}
 	}
 	return luaL_ref(L, LUA_REGISTRYINDEX);
@@ -749,8 +750,8 @@ static int getint (lua_State *L, int index, const char *field, int dflt) {
 			/* fall through */
 
 		default:
-			return luaL_error(L, "bad field '%s' (int expected, got %s)",
-					field, lua_typename(L, lua_type(L, -1)));
+			return luaL_error(L, "bad field '%s' (int expected, got %s)", field,
+					luaL_typename(L, -1));
 		}
 	}
 }
@@ -772,8 +773,8 @@ static int getboolean (lua_State *L, int index, const char *field, int dflt) {
 			return result;
 
 		default:
-			return luaL_error(L, "bad field '%s' (boolean expected, got %s)",
-					field, lua_typename(L, lua_type(L, -1)));
+			return luaL_error(L, "bad field '%s' (boolean expected, got %s)", field,
+					luaL_typename(L, -1));
 		}
 	}
 }
@@ -808,10 +809,9 @@ static int mopen (lua_State *L) {
 
 static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_t *cas, int flags) {
 	int                                 nret;
-	size_t                              len;
 	uint8_t                             extlen;
 	uint16_t                            keylen;
-	uint32_t                            bodylen;
+	uint32_t                            bodylen, valuelen;
 	memcached_buffer_t                 *b;
 	protocol_binary_response_no_extras  response;
 
@@ -862,21 +862,21 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	/* value */
 	bodylen = be32toh(response.message.header.response.bodylen);
 	if (bodylen > extlen + keylen) {
-		len = bodylen - (extlen + keylen);
+		valuelen = bodylen - (extlen + keylen);
 		if (flags & MEMCACHED_VALUE_BUFFER) {
 			b = lua_newuserdata(L, sizeof(memcached_buffer_t));
 			memset(b, 0, sizeof(memcached_buffer_t));
 			luaL_getmetatable(L, MEMCACHED_BUFFER_METATABLE);
 			lua_setmetatable(L, -2);
-			b->b = malloc(len);
+			b->b = malloc(valuelen);
 			if (b->b == NULL) {
 				return luaL_error(L, "out of memory");
 			}
-			b->capacity = len;
-			recvnosig(L, m, b->b, len);
-			b->len = b->pos = len;
+			b->capacity = valuelen;
+			recvnosig(L, m, b->b, valuelen);
+			b->len = b->pos = valuelen;
 		} else {
-			recvstring(L, m, len);
+			recvstring(L, m, valuelen);
 		}
 		if (flags & MEMCACHED_VALUE) {
 			nret++;
@@ -910,6 +910,7 @@ static int get (lua_State *L) {
 	struct iovec                 iov[2];
 	protocol_binary_request_get  request;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	key = luaL_checklstring(L, 2, &keylen);
 	luaL_argcheck(L, keylen > 0 && keylen <= UINT16_MAX, 2, "bad key length");
@@ -966,6 +967,7 @@ static int set (lua_State *L) {
 	protocol_binary_request_set     srequest;
 	protocol_binary_request_delete  drequest;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	key = luaL_checklstring(L, 2, &keylen);
 	luaL_argcheck(L, keylen > 0 && keylen <= UINT16_MAX, 2, "bad key length");
@@ -1066,6 +1068,7 @@ static int incr (lua_State *L) {
 	struct iovec                  iov[2];
 	protocol_binary_request_incr  request;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	key = luaL_checklstring(L, 2, &keylen);
 	luaL_argcheck(L, keylen > 0 && keylen <= UINT16_MAX, 2, "bad key length");
@@ -1117,11 +1120,12 @@ static int incr (lua_State *L) {
 }
 
 static int flush (lua_State *L) {
-	uint16_t                        status;
-	lua_Integer                     expiration;
-	memcached_t                    *m;
-	protocol_binary_request_flush   request;
+	uint16_t                       status;
+	lua_Integer                    expiration;
+	memcached_t                   *m;
+	protocol_binary_request_flush  request;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	expiration = luaL_optinteger(L, 2, 0);
 	luaL_argcheck(L, expiration >= 0 && expiration <= UINT32_MAX, 2, "bad expiration");
@@ -1158,6 +1162,7 @@ static int stats (lua_State *L) {
 	struct iovec                   iov[2];
 	protocol_binary_request_stats  request;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	key = luaL_optlstring(L, 2, NULL, &keylen);
 	luaL_argcheck(L, !key || (keylen > 0 && keylen <= UINT16_MAX), 2, "bad key length");
@@ -1187,7 +1192,7 @@ static int stats (lua_State *L) {
 		case PROTOCOL_BINARY_RESPONSE_SUCCESS:
 			switch (nret) {
 			case 1:
-				lua_pop(L, 1);  /* drop empty value */
+				lua_pop(L, 1);  /* pop empty value */
 				return 1;
 			
 			case 2:
@@ -1209,6 +1214,7 @@ static int quit (lua_State *L) {
 	memcached_t                   *m;
 	protocol_binary_request_quit  request;
 
+	/* check arguments */
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 
 	/* prepare request */
@@ -1248,7 +1254,7 @@ static int mclose (lua_State *L) {
 		lua_pushcfunction(L, quit);
 		lua_pushvalue(L, 1);
 		if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-			/* ignore errors */
+			/* ignore error, if any */
 			lua_pop(L, 1);
 		}
 
@@ -1260,8 +1266,8 @@ static int mclose (lua_State *L) {
 }
 
 static int tostring (lua_State *L) {
-	memcached_t  *m;
 	const char   *state;
+	memcached_t  *m;
 
 	m = luaL_checkudata(L, 1, MEMCACHED_METATABLE);
 	if (m->closed) {
@@ -1318,10 +1324,10 @@ int luaopen_memcached (lua_State *L) {
 	lua_setfield(L, -2, "dec");
 	lua_pushcfunction(L, flush);
 	lua_setfield(L, -2, "flush");
-	lua_pushcfunction(L, mclose);
-	lua_setfield(L, -2, "close");
 	lua_pushcfunction(L, stats);
 	lua_setfield(L, -2, "stats");
+	lua_pushcfunction(L, mclose);
+	lua_setfield(L, -2, "close");
 	lua_setfield(L, -2, "__index");
 	lua_pop(L, 1);
 

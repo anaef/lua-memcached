@@ -68,16 +68,16 @@ end
 local function testOpenClose ()
     local client = memcached.open()
 	assert(client)
-	assert(string.match(tostring(client), "%[(%w+)%]") == "disconnected")
+	local status = "%[(%w+)%]"
+	assert(string.match(tostring(client), status) == "disconnected")
 	local key = PREFIX .. "-test-open-close"
 	client:get(key)
-	assert(string.match(tostring(client), "%[(%w+)%]") == "connected")
+	assert(string.match(tostring(client), status) == "connected")
 	client:close()
-	assert(string.match(tostring(client), "%[(%w+)%]") == "closed")
+	assert(string.match(tostring(client), status) == "closed")
 
 	-- Configured client
 	local encoded, decoded
-	local value = "test-value"
 	client = memcached.open({
 		host = "localhost",
 		port = 11211,
@@ -93,6 +93,7 @@ local function testOpenClose ()
 		end,
 	})
 	assert(client)
+	local value = "test-value"
 	assert(client:set(key, value))
 	assert(encoded)
 	local result = client:get(key)

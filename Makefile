@@ -1,5 +1,4 @@
 LUA_INCDIR=/usr/include/lua5.4
-MEMCACHED_INCDIR=/usr/include/memcached
 LUA_BIN=/usr/bin/lua5.4
 LIBDIR=/usr/local/lib/lua/5.4
 CFLAGS=-Wall -Wextra -Wpointer-arith -Werror -fPIC -O3 -D_REENTRANT -D_GNU_SOURCE
@@ -15,7 +14,7 @@ memcached.so: memcached.o
 	gcc $(LDFLAGS) -o memcached.so memcached.o
 
 memcached.o: src/memcached.h src/memcached.c
-	gcc -c -o memcached.o $(CFLAGS) -I$(LUA_INCDIR) -I$(MEMCACHED_INCDIR) src/memcached.c
+	gcc -c -o memcached.o $(CFLAGS) -I$(LUA_INCDIR) src/memcached.c
 
 .PHONY: test
 test:

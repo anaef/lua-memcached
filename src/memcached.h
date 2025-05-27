@@ -12,7 +12,7 @@
 #include <lua.h>
 
 
-#define MEMCACHED_METATABLE "memcached"
+#define MEMCACHED_METATABLE         "memcached"
 #define MEMCACHED_BUFFER_METATABLE  "memcached.buffer"
 
 
