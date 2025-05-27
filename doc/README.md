@@ -57,7 +57,7 @@ Retrieves the value of `key` from the memcached server. The method returns the v
 (check-and-set) value if the key is present on the server, and `nil` otherwise.
 
 
-### `memcached:set (key, value [, expiration [, cas]]])`
+### `memcached:set (key, value [, expiration [, cas]])`
 
 Sets `value` as the value of `key` in the memcached server. If `value` is `nil`, the key is deleted
 instead. The optional non-negative `expiration` argument specifies a positive time in seconds after
