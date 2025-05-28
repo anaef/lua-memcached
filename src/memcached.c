@@ -16,8 +16,8 @@
 #include <sys/uio.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
-#include <memcached/protocol_binary.h>
 #include <endian.h>
+#include <memcached/protocol_binary.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include "memcached.h"
@@ -34,7 +34,7 @@
 #define MEMCACHED_TYPE_STRINGSHORT  LUA_TSTRING + 64
 #define MEMCACHED_TYPE_TABLEREF     LUA_TTABLE + 64
 
-#define MEMCACHED_CODEC_VERSION  "LM\xf6\x01" 
+#define MEMCACHED_CODEC_VERSION  "LM\xf6\x01"  /* version 1 */
 
 /* response flags */
 #define MEMCACHED_EXTRAS        1
@@ -71,8 +71,8 @@ typedef struct memcached {
 } memcached_t;
 
 typedef struct backref {
-	uint64_t  index;
-	uint64_t  cnt;
+	int          index;
+	lua_Integer  cnt;
 } backref_t;
 
 
@@ -143,7 +143,7 @@ static int buffer_require (lua_State *L, memcached_buffer_t * b, size_t cnt) {
 	if (capacity == 0) {
 		capacity = MEMCACHED_BUFFER_SIZE;
 	}
-	do {
+	while (capacity < required) {
 		if (capacity < 64 * 1024) {
 			/* double for small buffers */
 			if (capacity <= SIZE_MAX / 2) {
@@ -159,7 +159,7 @@ static int buffer_require (lua_State *L, memcached_buffer_t * b, size_t cnt) {
 				capacity = required;
 			}
 		}
-	} while (capacity < required);
+	}
 
 	/* reallocate */
 	bnew = realloc(b->b, capacity);
@@ -223,8 +223,8 @@ static int buffer_tostring (lua_State *L) {
 static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index) {
 	double       d;
 	size_t       len, narr_pos, nrec_pos;
-	int64_t      i, arr_index;
-	uint64_t     nlen, t, narr, nrec;
+	int64_t      i, t, narr, nrec;
+	uint64_t     nlen;
 	const char  *s;
 
 	switch (lua_type(L, index)) {
@@ -277,13 +277,7 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 		/* test if the table has already been encoded */
 		lua_pushvalue(L, index);
 		lua_rawget(L, br->index);
-		if (lua_isnil(L, -1)) {
-			/* store table for backrefs */
-			lua_pop(L, 1);
-			lua_pushvalue(L, index);
-			lua_pushinteger(L, ++br->cnt);
-			lua_rawset(L, br->index);
-		} else {
+		if (!lua_isnil(L, -1)) {
 			/* encode backref */
 			buffer_require(L, b, 1 + sizeof(t));
 			b->b[b->pos++] = (char)MEMCACHED_TYPE_TABLEREF;
@@ -294,6 +288,15 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 			break;
 		}
 
+		/* store table for backrefs */
+		if (br->cnt == LUA_MAXINTEGER) {
+			return luaL_error(L, "too many tables");
+		}
+		lua_pop(L, 1);
+		lua_pushvalue(L, index);
+		lua_pushinteger(L, ++br->cnt);
+		lua_rawset(L, br->index);
+
 		/* analyze and write table */
 		buffer_require(L, b, 1 + sizeof(narr) + sizeof(nrec));
 		b->b[b->pos++] = (char)LUA_TTABLE;
@@ -301,16 +304,19 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 		b->pos += sizeof(narr);
 		nrec_pos = b->pos;
 		b->pos += sizeof(nrec);
-		narr = 0;
-		nrec = 0;
-		arr_index = 1;
+		narr = nrec = 0;
 		lua_pushnil(L);
 		while (lua_next(L, index)) {
 			if (supported(L, -2) && supported(L, -1)) {
-				if (nrec == 0 && lua_isinteger(L, -2) && lua_tointeger(L, -2) == arr_index) {
+				if (nrec == 0 && lua_tointeger(L, -2) == narr + 1) {
+					if (narr == INT64_MAX) {
+						return luaL_error(L, "too many array elements");
+					}
 					narr++;
-					arr_index++;
 				} else {
+					if (nrec == INT64_MAX) {
+						return luaL_error(L, "too many record elements");
+					}
 					nrec++;
 				}
 				encode(L, b, br, lua_gettop(L) - 1);
@@ -334,8 +340,8 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 	size_t    len;
 	double    d;
-	int64_t   i;
-	uint64_t  nlen, narr, nrec, t;
+	int64_t   i, t, narr, nrec;
+	uint64_t  nlen;
 
 	buffer_avail(L, b, 1);
 	switch (b->b[b->pos++]) {
@@ -387,14 +393,23 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 		memcpy(&nrec, &b->b[b->pos], sizeof(nrec));
 		b->pos += sizeof(nrec);
 		nrec = be64toh(nrec);
+		if (narr < 0 || nrec < 0) {
+			return luaL_error(L, "bad table size");
+		}
 
 		/* store the table for backrefs */
-		lua_createtable(L, narr, nrec);
+		lua_createtable(L, narr <= INT_MAX ? (int)narr : INT_MAX,
+				nrec <= INT_MAX ? (int)nrec : INT_MAX);
 		lua_pushvalue(L, -1);
 		lua_rawseti(L, br->index, ++br->cnt);
 
 		/* decode table content */
-		for (nrec = nrec + narr; nrec > 0; nrec--) {
+		for (; narr > 0; narr--) {
+			decode(L, b, br);
+			decode(L, b, br);
+			lua_rawset(L, -3);
+		}
+		for (; nrec > 0; nrec--) {
 			decode(L, b, br);
 			decode(L, b, br);
 			lua_rawset(L, -3);
@@ -481,6 +496,9 @@ int mdecode (lua_State *L) {
 
 	/* decode */
 	decode(L, b, &br);
+	if (b->pos < b->len) {
+		return luaL_error(L, "extra data in buffer");
+	}
 
 	return 1;
 }
