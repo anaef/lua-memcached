@@ -1,7 +1,7 @@
 # Lua memcached Release Notes
 
 
-## Release 1.0.1
+## Release 1.0.1 (2025-05-28)
 
 - Codec code improvements.
 
