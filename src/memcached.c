@@ -813,7 +813,7 @@ static int mopen (lua_State *L) {
 	luaL_getmetatable(L, MEMCACHED_METATABLE);
 	lua_setmetatable(L, -2);
 
-	/* get host and functions */
+	/* get configuration */
 	m->host_index = getstring(L, 1, "host", "localhost");
 	m->port_index = getstring(L, 1, "port", "11211");
 	m->encode_index = getfunction(L, 1, "encode", mencode);
@@ -834,7 +834,7 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	protocol_binary_response_no_extras  response;
 
 	/* receive */
-	recvnosig(L, m, &response.bytes, sizeof(response.bytes));
+	recvnosig(L, m, &response, sizeof(response.bytes));
 	if (response.message.header.response.magic != PROTOCOL_BINARY_RES) {
 		close(m->fd);
 		m->fd = -1;
