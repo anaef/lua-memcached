@@ -5,8 +5,8 @@ description = {
 	summary = "Lua binding and codec for memcached",
 	detailed = [[
 		Lua memcached provides a binding for memcached, a high-performance, distributed memory
-		object caching system. It is implemented in C using the binary protocol and includes a
-		codec for encoding and decoding Lua values.
+		object caching system. The module is implemented in C using the binary protocol and
+		includes a codec for encoding and decoding Lua values.
 	]],
 	license = "MIT",
 	homepage = "https://github.com/anaef/lua-memcached",

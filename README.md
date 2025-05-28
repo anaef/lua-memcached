@@ -5,8 +5,8 @@
 
 [Lua memcached](https://github.com/anaef/lua-memcached) provides a binding for
 [memcached](https://memcached.org/), a high-performance, distributed memory object caching system.
-It is implemented in C using the binary protocol and includes a codec for encoding and decoding Lua
-values.
+The module is implemented in C using the binary protocol and includes a codec for encoding and
+decoding Lua values.
 
 Here is a quick example:
 
