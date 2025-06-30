@@ -514,7 +514,7 @@ static int mencode (lua_State *L) {
 	luaL_checkany(L, 1);
 
 	/* prepare backrefs */
-	memset(&br, 0, sizeof(backref_t));
+	br.cnt = 0;
 	lua_newtable(L);
 	br.index = lua_gettop(L);
 
@@ -556,7 +556,7 @@ static int mdecode (lua_State *L) {
 	b->pos = 0;
 
 	/* prepare backrefs */
-	memset(&br, 0, sizeof(backref_t));
+	br.cnt = 0;
 	lua_newtable(L);
 	br.index = lua_gettop(L);
 
