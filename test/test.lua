@@ -49,13 +49,18 @@ local function testCodec ()
 	local t4 = { a = 1, b = 2, c = { d = 3, e = 4 } }
 	encodeAndDecode(t4)
 	local t5 = { }
-	for i = 1, 10000 do
-		t5[i] = { u = math.random(), v = "test" }
+	for i = 1, 2^8 do
+		t5[i] = { u = math.random(), v = "test16" }
 	end
 	encodeAndDecode(t5)
-	local t6, t7 = { a = 1 }, { b = 2, f = print }
-	t6.other, t7.other = t7, t6
-	local encoded = memcached.encode(t6)
+	local t6 = { }
+	for i = 1, 2^16 do
+		t6[i] = { u = math.random(), v = "test32" }
+	end
+	encodeAndDecode(t6)
+	local t7, t8 = { a = 1 }, { b = 2, f = print }
+	t7.other, t8.other = t8, t7
+	local encoded = memcached.encode(t7)
 	local decoded = memcached.decode(encoded)
 	assert(type(decoded) == "table")
 	assert(decoded.a == 1)

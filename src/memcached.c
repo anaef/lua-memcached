@@ -30,11 +30,15 @@
 #endif  /* MEMCACHED_BUFFER_MAX */
 
 /* additional 'types' */
-#define MEMCACHED_TYPE_INTEGER      LUA_TNUMBER + 64
-#define MEMCACHED_TYPE_STRINGSHORT  LUA_TSTRING + 64
-#define MEMCACHED_TYPE_TABLEREF     LUA_TTABLE + 64
-
-#define MEMCACHED_CODEC_VERSION  "LM\xf6\x01"  /* version 1 */
+#define MEMCACHED_TYPE_BOOLEANTRRUE  LUA_TBOOLEAN + 64
+#define MEMCACHED_TYPE_INTEGER       LUA_TNUMBER + 64
+#define MEMCACHED_TYPE_STRINGSHORT   LUA_TSTRING + 64
+#define MEMCACHED_TYPE_TABLE8        LUA_TTABLE
+#define MEMCACHED_TYPE_TABLE16       LUA_TTABLE + 16
+#define MEMCACHED_TYPE_TABLE32       LUA_TTABLE + 32
+#define MEMCACHED_TYPE_TABLE64       LUA_TTABLE + 32 + 16
+#define MEMCACHED_TYPE_TABLEREF      LUA_TTABLE + 64
+#define MEMCACHED_CODEC_VERSION  "LM\xf6\x02"  /* version 2 */
 
 /* response flags */
 #define MEMCACHED_EXTRAS        1
@@ -86,6 +90,8 @@ static int buffer_free(lua_State *L);
 static inline int supported(lua_State *L, int index);
 static int encode(lua_State *L, memcached_buffer_t *b, backref_t *br, int index);
 static int decode(lua_State *L, memcached_buffer_t *b, backref_t *br);
+static int decodetable(lua_State *L, memcached_buffer_t *b, backref_t *br, int64_t narr,
+		int64_t nrec);
 static int mencode(lua_State *L);
 static int mdecode(lua_State *L);
 
@@ -222,16 +228,17 @@ static int buffer_tostring (lua_State *L) {
 
 static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index) {
 	double       d;
-	size_t       len, narr_pos, nrec_pos;
+	size_t       len, size_pos;
+	uint16_t     n16;
+	uint32_t     n32;
 	int64_t      i, t, narr, nrec;
 	uint64_t     nlen;
 	const char  *s;
 
 	switch (lua_type(L, index)) {
 	case LUA_TBOOLEAN:
-		buffer_require(L, b, 2);
-		b->b[b->pos++] = (char)LUA_TBOOLEAN;
-		b->b[b->pos++] = (char)lua_toboolean(L, index);	
+		buffer_require(L, b, 1);
+		b->b[b->pos++] = (char)lua_toboolean(L, index) ? MEMCACHED_TYPE_BOOLEANTRRUE : LUA_TBOOLEAN;
 		break;
 
 	case LUA_TNUMBER:
@@ -298,12 +305,10 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 		lua_rawset(L, br->index);
 
 		/* analyze and write table */
-		buffer_require(L, b, 1 + sizeof(narr) + sizeof(nrec));
-		b->b[b->pos++] = (char)LUA_TTABLE;
-		narr_pos = b->pos;
-		b->pos += sizeof(narr);
-		nrec_pos = b->pos;
-		b->pos += sizeof(nrec);
+		buffer_require(L, b, 1 + 2);
+		b->b[b->pos++] = (char)MEMCACHED_TYPE_TABLE8;
+		size_pos = b->pos;
+		b->pos += 2;
 		narr = nrec = 0;
 		lua_pushnil(L);
 		while (lua_next(L, index)) {
@@ -324,10 +329,40 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 			}	
 			lua_pop(L, 1);
 		}
-		narr = htobe64(narr);
-		memcpy(&b->b[narr_pos], &narr, sizeof(narr));
-		nrec = htobe64(nrec);
-		memcpy(&b->b[nrec_pos], &nrec, sizeof(nrec));
+		if (narr <= UINT8_MAX && nrec <= UINT8_MAX) {
+			b->b[size_pos++] = (char)narr;
+			b->b[size_pos] = (char)nrec;
+		} else if (narr <= UINT16_MAX && nrec <= UINT16_MAX) {
+			b->b[size_pos - 1] = MEMCACHED_TYPE_TABLE16;
+			buffer_require(L, b, 4 - 2);
+			memmove(&b->b[size_pos + 4], &b->b[size_pos + 2], b->pos - size_pos - 2);
+			b->pos += 4 - 2;
+			n16 = htobe16((uint16_t)narr);
+			memcpy(&b->b[size_pos], &n16, sizeof(n16));
+			size_pos += sizeof(n16);
+			n16 = htobe16((uint16_t)nrec);
+			memcpy(&b->b[size_pos], &n16, sizeof(n16));
+		} else if (narr <= UINT32_MAX && nrec <= UINT32_MAX) {
+			b->b[size_pos - 1] = MEMCACHED_TYPE_TABLE32;
+			buffer_require(L, b, 8 - 2);
+			memmove(&b->b[size_pos + 8], &b->b[size_pos + 2], b->pos - size_pos - 2);
+			b->pos += 8 - 2;
+			n32 = htobe32((uint32_t)narr);
+			memcpy(&b->b[size_pos], &n32, sizeof(n32));
+			size_pos += sizeof(n32);
+			n32 = htobe32((uint32_t)nrec);
+			memcpy(&b->b[size_pos], &n32, sizeof(n32));
+		} else {
+			b->b[size_pos - 1] = MEMCACHED_TYPE_TABLE64;
+			buffer_require(L, b, 16 - 2);
+			memmove(&b->b[size_pos + 16], &b->b[size_pos + 2], b->pos - size_pos - 2);
+			b->pos += 16 - 2;
+			narr = htobe64(narr);
+			memcpy(&b->b[size_pos], &narr, sizeof(narr));
+			size_pos += sizeof(narr);
+			nrec = htobe64(nrec);
+			memcpy(&b->b[size_pos], &nrec, sizeof(nrec));
+		}
 		break;
 
 	default:
@@ -340,14 +375,20 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 	size_t    len;
 	double    d;
+	uint8_t   narr8, nrec8;
+	uint16_t  narr16, nrec16;
+	uint32_t  narr32, nrec32;
 	int64_t   i, t, narr, nrec;
 	uint64_t  nlen;
 
 	buffer_avail(L, b, 1);
 	switch (b->b[b->pos++]) {
 	case LUA_TBOOLEAN:
-		buffer_avail(L, b, 1);
-		lua_pushboolean(L, b->b[b->pos++]);
+		lua_pushboolean(L, 0);
+		break;
+
+	case MEMCACHED_TYPE_BOOLEANTRRUE:
+		lua_pushboolean(L, 1);
 		break;
 
 	case LUA_TNUMBER:
@@ -382,10 +423,36 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 		b->pos += len;
 		break;
 
-	case LUA_TTABLE:
-		luaL_checkstack(L, 3, "decoding table");
+	case MEMCACHED_TYPE_TABLE8:
+		buffer_avail(L, b, sizeof(narr8) + sizeof(nrec8));
+		narr8 = (uint8_t)b->b[b->pos++];
+		nrec8 = (uint8_t)b->b[b->pos++];
+		decodetable(L, b, br, (int64_t)narr8, (int64_t)nrec8);
+		break;
 
-		/* get number of array and record elements */
+	case MEMCACHED_TYPE_TABLE16:
+		buffer_avail(L, b, sizeof(narr16) + sizeof(nrec16));
+		memcpy(&narr16, &b->b[b->pos], sizeof(narr16));
+		b->pos += sizeof(narr16);
+		narr16 = be16toh(narr16);
+		memcpy(&nrec16, &b->b[b->pos], sizeof(nrec16));
+		b->pos += sizeof(nrec16);
+		nrec16 = be16toh(nrec16);
+		decodetable(L, b, br, (int64_t)narr16, (int64_t)nrec16);
+		break;
+
+	case MEMCACHED_TYPE_TABLE32:
+		buffer_avail(L, b, sizeof(narr32) + sizeof(nrec32));
+		memcpy(&narr32, &b->b[b->pos], sizeof(narr32));
+		b->pos += sizeof(narr32);
+		narr32 = be32toh(narr32);
+		memcpy(&nrec32, &b->b[b->pos], sizeof(nrec32));
+		b->pos += sizeof(nrec32);
+		nrec32 = be32toh(nrec32);
+		decodetable(L, b, br, (int64_t)narr32, (int64_t)nrec32);
+		break;
+
+	case MEMCACHED_TYPE_TABLE64:
 		buffer_avail(L, b, sizeof(narr) + sizeof(nrec));
 		memcpy(&narr, &b->b[b->pos], sizeof(narr));
 		b->pos += sizeof(narr);
@@ -396,24 +463,7 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 		if (narr < 0 || nrec < 0) {
 			return luaL_error(L, "bad table size");
 		}
-
-		/* store the table for backrefs */
-		lua_createtable(L, narr <= INT_MAX ? (int)narr : INT_MAX,
-				nrec <= INT_MAX ? (int)nrec : INT_MAX);
-		lua_pushvalue(L, -1);
-		lua_rawseti(L, br->index, ++br->cnt);
-
-		/* decode table content */
-		for (; narr > 0; narr--) {
-			decode(L, b, br);
-			decode(L, b, br);
-			lua_rawset(L, -3);
-		}
-		for (; nrec > 0; nrec--) {
-			decode(L, b, br);
-			decode(L, b, br);
-			lua_rawset(L, -3);
-		}
+		decodetable(L, b, br, narr, nrec);
 		break;	
 
 	case MEMCACHED_TYPE_TABLEREF:
@@ -433,7 +483,30 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 	return 1;
 }
 
-int mencode (lua_State *L) {
+static int decodetable (lua_State *L, memcached_buffer_t *b, backref_t *br, int64_t narr,
+		int64_t nrec) {
+	/* store the table for backrefs */
+	luaL_checkstack(L, 3, "decoding table");
+	lua_createtable(L, narr <= INT_MAX ? (int)narr : INT_MAX,
+			nrec <= INT_MAX ? (int)nrec : INT_MAX);
+	lua_pushvalue(L, -1);
+	lua_rawseti(L, br->index, ++br->cnt);
+
+	/* decode table content */
+	for (; narr > 0; narr--) {
+		decode(L, b, br);
+		decode(L, b, br);
+		lua_rawset(L, -3);
+	}
+	for (; nrec > 0; nrec--) {
+		decode(L, b, br);
+		decode(L, b, br);
+		lua_rawset(L, -3);
+	}
+	return 1;
+}
+
+static int mencode (lua_State *L) {
 	backref_t            br;
 	memcached_buffer_t  *b;
 
@@ -469,7 +542,7 @@ int mencode (lua_State *L) {
 	return 1;
 }
 
-int mdecode (lua_State *L) {
+static int mdecode (lua_State *L) {
 	backref_t            br;
 	memcached_buffer_t  *b, bs;
 
