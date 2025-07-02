@@ -1,7 +1,7 @@
 # Lua memcached Release Notes
 
 
-## Release 1.0.2
+## Release 1.0.2 (2025-07-02)
 
 - Codec version 2 with more compact representation of booleans and (small) tables.
 
