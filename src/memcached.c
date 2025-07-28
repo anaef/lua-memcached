@@ -1197,9 +1197,16 @@ static int incr (lua_State *L) {
 		if (nret != 1) {
 			return luaL_error(L, "protocol error");
 		}
-		memcpy(&value, lua_tostring(L, -1), sizeof(value));
-		lua_pushinteger(L, be64toh(value));
-		return 1;
+                {
+                        size_t len;
+                        const char *s = lua_tolstring(L, -1, &len);
+                        if (len != sizeof(value)) {
+                                return luaL_error(L, "protocol error");
+                        }
+                        memcpy(&value, s, sizeof(value));
+                }
+                lua_pushinteger(L, be64toh(value));
+                return 1;
 
 	case PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL:
 		lua_pushnil(L);
