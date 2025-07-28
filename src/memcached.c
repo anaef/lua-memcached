@@ -30,7 +30,7 @@
 #endif  /* MEMCACHED_BUFFER_MAX */
 
 /* additional 'types' */
-#define MEMCACHED_TYPE_BOOLEANTRRUE  LUA_TBOOLEAN + 64
+#define MEMCACHED_TYPE_BOOLEANTRUE  LUA_TBOOLEAN + 64
 #define MEMCACHED_TYPE_INTEGER       LUA_TNUMBER + 64
 #define MEMCACHED_TYPE_STRINGSHORT   LUA_TSTRING + 64
 #define MEMCACHED_TYPE_TABLE8        LUA_TTABLE
@@ -238,7 +238,7 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 	switch (lua_type(L, index)) {
 	case LUA_TBOOLEAN:
 		buffer_require(L, b, 1);
-		b->b[b->pos++] = (char)lua_toboolean(L, index) ? MEMCACHED_TYPE_BOOLEANTRRUE : LUA_TBOOLEAN;
+                b->b[b->pos++] = (char)lua_toboolean(L, index) ? MEMCACHED_TYPE_BOOLEANTRUE : LUA_TBOOLEAN;
 		break;
 
 	case LUA_TNUMBER:
@@ -387,9 +387,9 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 		lua_pushboolean(L, 0);
 		break;
 
-	case MEMCACHED_TYPE_BOOLEANTRRUE:
-		lua_pushboolean(L, 1);
-		break;
+        case MEMCACHED_TYPE_BOOLEANTRUE:
+                lua_pushboolean(L, 1);
+                break;
 
 	case LUA_TNUMBER:
 		buffer_avail(L, b, sizeof(d));
