@@ -235,10 +235,10 @@ function testIncDec ()
 	newValue = client:dec(key, incValue)
 	assert(newValue == initial + incValue - incValue)
 
-        -- Incompatible types
-        client:set(key, "not-a-number")
-        assert(client:inc(key, incValue) == nil)
-        assert(client:dec(key, incValue) == nil)
+	-- Incompatible types
+	client:set(key, "not-a-number")
+	assert(client:inc(key, incValue) == nil)
+	assert(client:dec(key, incValue) == nil)
 
 	client:close()
 end

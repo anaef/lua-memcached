@@ -30,7 +30,7 @@
 #endif  /* MEMCACHED_BUFFER_MAX */
 
 /* additional 'types' */
-#define MEMCACHED_TYPE_BOOLEANTRUE  LUA_TBOOLEAN + 64
+#define MEMCACHED_TYPE_BOOLEANTRUE   LUA_TBOOLEAN + 64
 #define MEMCACHED_TYPE_INTEGER       LUA_TNUMBER + 64
 #define MEMCACHED_TYPE_STRINGSHORT   LUA_TSTRING + 64
 #define MEMCACHED_TYPE_TABLE8        LUA_TTABLE
@@ -1150,7 +1150,7 @@ static int set (lua_State *L) {
 
 static int incr (lua_State *L) {
 	int                           nret;
-	size_t                        keylen;
+	size_t                        keylen, len;
 	uint16_t                      status;
 	uint64_t                      value;
 	const char                   *key;
@@ -1197,16 +1197,13 @@ static int incr (lua_State *L) {
 		if (nret != 1) {
 			return luaL_error(L, "protocol error");
 		}
-                {
-                        size_t len;
-                        const char *s = lua_tolstring(L, -1, &len);
-                        if (len != sizeof(value)) {
-                                return luaL_error(L, "protocol error");
-                        }
-                        memcpy(&value, s, sizeof(value));
-                }
-                lua_pushinteger(L, be64toh(value));
-                return 1;
+		const char *s = lua_tolstring(L, -1, &len);
+		if (len != sizeof(value)) {
+				return luaL_error(L, "protocol error");
+		}
+		memcpy(&value, s, sizeof(value));
+		lua_pushinteger(L, be64toh(value));
+		return 1;
 
 	case PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL:
 		lua_pushnil(L);
