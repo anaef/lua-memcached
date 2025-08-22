@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -110,6 +111,7 @@ static int getint(lua_State *L, int index, const char *field, int dflt);
 static int getboolean(lua_State *L, int index, const char *field, int dflt);
 static int mopen(lua_State *L);
 static int recvresponse(lua_State *L, memcached_t *m, uint16_t *status, uint64_t *cas, int flags);
+static int backoff(lua_State *L, int min, int max, int* result);
 static int get(lua_State *L);
 static int set(lua_State *L);
 static int incr(lua_State *L);
@@ -991,6 +993,20 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	return nret;
 }
 
+static int backoff (lua_State *L, int min, int max, int* result) {
+	uintptr_t  p;
+
+	/* source: https://github.com/skeeto/hash-prospector */
+	p = (uintptr_t)L;
+	p ^= p >> 16;
+	p *= 0x7feb352d;
+	p ^= p >> 15;
+	p *= 0x846ca68b;
+	p ^= p >> 16;
+	*result = (int)(min + (p % (max - min + 1)));
+	return 0;
+}
+
 static int get (lua_State *L) {
 	int                          nret;
 	size_t                       keylen;
@@ -1149,7 +1165,7 @@ static int set (lua_State *L) {
 }
 
 static int incr (lua_State *L) {
-	int                           nret;
+	int                           nret, attempts, backoff_ms;
 	size_t                        keylen, len;
 	uint16_t                      status;
 	uint64_t                      value;
@@ -1157,6 +1173,7 @@ static int incr (lua_State *L) {
 	lua_Integer                   delta, initial, expiration;
 	memcached_t                  *m;
 	struct iovec                  iov[2];
+	struct timespec               ts;
 	protocol_binary_request_incr  request;
 
 	/* check arguments */
@@ -1182,12 +1199,17 @@ static int incr (lua_State *L) {
 	request.message.body.initial = htobe64((uint64_t)initial);
 	request.message.body.expiration = htobe32((uint32_t)expiration);
 
-	/* send request */
+	/* prepare sending */
+	attempts = 3;
+	backoff_ms = 0;
 	getsocket(L, m);
 	iov[0].iov_base = &request;
 	iov[0].iov_len = sizeof(request.bytes);
 	iov[1].iov_base = (void *)key;
 	iov[1].iov_len = (uint16_t)keylen;
+
+	/* send request */
+	redo:
 	sendmsgnosig(L, m, iov, 2);
 
 	/* read response */
@@ -1204,6 +1226,20 @@ static int incr (lua_State *L) {
 		memcpy(&value, s, sizeof(value));
 		lua_pushinteger(L, be64toh(value));
 		return 1;
+
+	case PROTOCOL_BINARY_RESPONSE_NOT_STORED:  /* race condition */
+		if (--attempts == 0) {
+			return luaL_error(L, "memcached error (%d)", (int)status);
+		}
+		if (backoff_ms == 0) {
+			backoff(L, 5, 25, &backoff_ms);
+		} else {
+			backoff_ms *= 2;
+		}
+		ts.tv_sec = 0;
+		ts.tv_nsec = backoff_ms * 1000000;
+		(void)nanosleep(&ts, NULL);
+		goto redo;
 
 	case PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL:
 		lua_pushnil(L);

@@ -3,6 +3,7 @@
 
 ## Release 1.0.3
 
+- Retry incr/decr with exponential backoff on race condition.
 - Check incr/decr return size.
 
 
