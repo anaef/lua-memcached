@@ -1,6 +1,6 @@
 rockspec_format = "3.0"
 package = "lua-memcached"
-version = "1.0.2-1"
+version = "1.0.3-1"
 description = {
 	summary = "Lua binding and codec for memcached",
 	detailed = [[
