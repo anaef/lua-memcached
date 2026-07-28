@@ -1,6 +1,11 @@
 # Lua memcached Release Notes
 
 
+## Release 1.0.4
+
+- Add security posture.
+
+
 ## Release 1.0.3 (2025-08-22)
 
 - Retry incr/decr with exponential backoff on race condition.
