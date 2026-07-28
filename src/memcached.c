@@ -1,7 +1,7 @@
 /*
  * Lua memcached module
  *
- * Copyright (C) 2011-2025 Andre Naef
+ * Copyright (C) 2011-2026 Andre Naef
  */
 
 
@@ -261,7 +261,7 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 		
 	case LUA_TSTRING:
 		s = lua_tolstring(L, index, &len);
-		if (len > UINT64_MAX - (1 + sizeof(len))) {
+		if (len > SIZE_MAX - (1 + sizeof(nlen))) {
 			return luaL_error(L, "string too long");
 		}
 		if (len <= 255) {
@@ -269,7 +269,7 @@ static int encode (lua_State *L, memcached_buffer_t *b, backref_t *br, int index
 			b->b[b->pos++] = (char)MEMCACHED_TYPE_STRINGSHORT;
 			b->b[b->pos++] = (uint8_t)len;
 		} else {
-			buffer_require(L, b, 1 + sizeof(len) + len);
+			buffer_require(L, b, 1 + sizeof(nlen) + len);
 			b->b[b->pos++] = (char)LUA_TSTRING;
 			nlen = htobe64(len);
 			memcpy(&b->b[b->pos], &nlen, sizeof(nlen));

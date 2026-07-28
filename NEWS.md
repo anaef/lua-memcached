@@ -4,6 +4,7 @@
 ## Release 1.0.4
 
 - Add security posture.
+- Fix long-string encoding on 32-bit systems.
 
 
 ## Release 1.0.3 (2025-08-22)
