@@ -13,7 +13,7 @@ description = {
 	labels = { "cache" },
 }
 dependencies = {
-	"lua >= 5.3"
+	"lua >= 5.3, < 5.6"
 }
 external_dependencies = {
 	MEMCACHED = {

@@ -3,6 +3,7 @@
 
 ## Release 1.1.0
 
+- Add Lua 5.5 to the tested versions.
 - Add configurable I/O timeout.
 - Add security posture.
 - Fix long-string encoding on 32-bit systems.

@@ -65,7 +65,7 @@ Please see the [documentation](doc/) folder.
 
 ## Limitations
 
-Lua memcached supports Lua 5.3 and Lua 5.4.
+Lua memcached supports Lua 5.3, Lua 5.4, and Lua 5.5.
 
 Lua memcached has been built and tested on Ubuntu Linux (64-bit).
 
