@@ -1,6 +1,6 @@
 rockspec_format = "3.0"
 package = "lua-memcached"
-version = "1.0.3-2"
+version = "1.1.0-1"
 description = {
 	summary = "Lua binding and codec for memcached",
 	detailed = [[
@@ -22,7 +22,7 @@ external_dependencies = {
 }
 source = {
 	url = "git+https://github.com/anaef/lua-memcached.git",
-	tag = "v1.0.3",
+	tag = "v1.1.0",
 }
 build = {
 	type = "builtin",
