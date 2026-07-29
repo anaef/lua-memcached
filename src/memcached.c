@@ -196,6 +196,9 @@ static int buffer_free (lua_State *L) {
 		free(b->b);
 		b->b = NULL;
 	}
+	b->pos = 0;
+	b->len = 0;
+	b->capacity = 0;
 	return 0;
 }
 

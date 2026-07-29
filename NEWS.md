@@ -7,6 +7,7 @@
 - Fix long-string encoding on 32-bit systems.
 - Harden response frame validation.
 - Harden request transmission.
+- Harden buffer finalization.
 
 
 ## Release 1.0.3 (2025-08-22)
