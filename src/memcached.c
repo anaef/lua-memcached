@@ -491,6 +491,11 @@ static int decode (lua_State *L, memcached_buffer_t *b, backref_t *br) {
 
 static int decodetable (lua_State *L, memcached_buffer_t *b, backref_t *br, int64_t narr,
 		int64_t nrec) {
+	/* check feasibility */
+	if ((uintmax_t)narr + (uintmax_t)nrec > (uintmax_t)((b->len - b->pos) / 2)) {
+		return luaL_error(L, "bad table size");
+	}
+
 	/* store the table for backrefs */
 	luaL_checkstack(L, 3, "decoding table");
 	lua_createtable(L, narr <= INT_MAX ? (int)narr : INT_MAX,

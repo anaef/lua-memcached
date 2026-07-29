@@ -8,6 +8,7 @@
 - Harden response frame validation.
 - Harden request transmission.
 - Harden buffer finalization.
+- Harden table decoding.
 
 
 ## Release 1.0.3 (2025-08-22)
