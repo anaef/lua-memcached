@@ -27,7 +27,12 @@ following keys:
 - `host`: A string representing the memcached server host to connect to. Defaults to `"localhost"`.
 - `port`: A string (or integer) representing the memcached server port to connect to. Defaults to
 `"11211"`.
-- `timeout`: An positive int representing the connect timeout in milliseconds. Defaults to `1000`.
+- `timeout`: A positive integer representing the connect timeout in milliseconds. Defaults to
+`1000`.
+- `iotimeout`: A non-negative integer representing the socket send and receive inactivity timeout in
+milliseconds. It applies separately to each blocking socket call, so retries and partial transfers
+start a new timeout interval and the total duration of a client operation is not bounded. `0`
+disables the timeout and is the default.
 - `reconnect`: A boolean indicating whether to reconnect after an error. Defaults to `true`.
 - `encode`: A function that takes a value as its sole argument and returns a buffer or a string
 representing its encoding. Defaults to `memcached.encode`.

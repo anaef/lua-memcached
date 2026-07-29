@@ -1,8 +1,9 @@
 # Lua memcached Release Notes
 
 
-## Release 1.0.4
+## Release 1.1.0
 
+- Add configurable I/O timeout.
 - Add security posture.
 - Fix long-string encoding on 32-bit systems.
 - Harden response frame validation.

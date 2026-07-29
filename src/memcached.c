@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netdb.h>
@@ -70,6 +71,7 @@ typedef struct memcached {
 	int  encode_index;  /* encode function */
 	int  decode_index;  /* decode function */
 	int  timeout;       /* connect timeout (milliseconds) */
+	int  iotimeout;     /* I/O timeout (milliseconds) */
 	int  fd;            /* socket */
 	int  reconnect:1;   /* reconnect on error */
 	int  closed:1;      /* closed */
@@ -597,6 +599,7 @@ static int getsocket (lua_State *L, memcached_t *m) {
 	socklen_t         len;
 	const char       *host, *port;
 	struct pollfd     pfd;
+	struct timeval    iotimeout;
 	struct addrinfo   hints, *results, *rp;
 
 	/* check state */
@@ -620,6 +623,10 @@ static int getsocket (lua_State *L, memcached_t *m) {
 	lua_pop(L, 2);
 	if (getaddrinfo(host, port, &hints, &results)) {
 		return luaL_error(L, "error resolving '%s:%s'", host, port);
+	}
+	if (m->iotimeout > 0) {
+		iotimeout.tv_sec = m->iotimeout / 1000;
+		iotimeout.tv_usec = (m->iotimeout % 1000) * 1000;
 	}
 
 	/* connect */
@@ -645,6 +652,15 @@ static int getsocket (lua_State *L, memcached_t *m) {
 		/* reuse address */
 		flags = 1;
 		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
+			err = errno;
+			close(fd);
+			continue;
+		}
+
+		/* set I/O timeout */
+		if (m->iotimeout > 0
+				&& (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &iotimeout, sizeof(iotimeout)) == -1
+				|| setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &iotimeout, sizeof(iotimeout)) == -1)) {
 			err = errno;
 			close(fd);
 			continue;
@@ -744,6 +760,9 @@ static ssize_t checkresult (lua_State *L, memcached_t *m, ssize_t result) {
 	if (result == 0) {
 		return luaL_error(L, "socket closed");
 	} else {
+		if (m->iotimeout > 0 && (err == EAGAIN || err == EWOULDBLOCK)) {
+			err = ETIMEDOUT;
+		}
 		return luaL_error(L, "socket error: %s (%d)", strerror(err), err);
 	}
 }
@@ -935,6 +954,8 @@ static int mopen (lua_State *L) {
 	m->decode_index = getfunction(L, 1, "decode", mdecode);
 	m->timeout = getint(L, 1, "timeout", 1000);
 	luaL_argcheck(L, m->timeout > 0, 1, "bad timeout");
+	m->iotimeout = getint(L, 1, "iotimeout", 0);
+	luaL_argcheck(L, m->iotimeout >= 0, 1, "bad I/O timeout");
 	m->reconnect = getboolean(L, 1, "reconnect", 1);
 	
 	return 1;

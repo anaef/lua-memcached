@@ -87,6 +87,7 @@ local function testOpenClose ()
 		host = "localhost",
 		port = 11211,
 		timeout = 1000,
+		iotimeout = 1000,
 		reconnect = true,
 		encode = function (_value)
 			encoded = true
