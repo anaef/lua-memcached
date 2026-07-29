@@ -48,6 +48,9 @@
 #define MEMCACHED_VALUE         4
 #define MEMCACHED_VALUE_BUFFER  8
 
+/* stats */
+#define MEMCACHED_STATS_MAX  65536
+
 /* request extras */
 #define MEMCACHED_REQUEST_BASE  \
 		(sizeof(((protocol_binary_request_no_extras *)0)->bytes))
@@ -1349,7 +1352,7 @@ static int flush (lua_State *L) {
 
 static int stats (lua_State *L) {
 	int                            nret;
-	size_t                         keylen;
+	size_t                         keylen, nstats;
 	uint16_t                       status;
 	const char                    *key;
 	memcached_t                   *m;
@@ -1380,6 +1383,7 @@ static int stats (lua_State *L) {
 
 	/* read response */
 	lua_newtable(L);
+	nstats = 0;
 	while (1) {
 		nret = recvresponse(L, m, &status, NULL, MEMCACHED_KEY | MEMCACHED_VALUE);
 		switch (status) {
@@ -1390,6 +1394,11 @@ static int stats (lua_State *L) {
 				return 1;
 			
 			case 2:
+				if (nstats == MEMCACHED_STATS_MAX) {
+					invalidatesocket(m);
+					return luaL_error(L, "too many stats");
+				}
+				nstats++;
 				lua_rawset(L, -3);
 				break;
 

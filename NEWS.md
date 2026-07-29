@@ -10,6 +10,7 @@
 - Harden request transmission.
 - Harden buffer finalization.
 - Harden table decoding.
+- Harden stats response handling.
 
 
 ## Release 1.0.3 (2025-08-22)
