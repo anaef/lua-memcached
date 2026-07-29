@@ -100,8 +100,8 @@ static int mdecode(lua_State *L);
 static int getsocket(lua_State *L, memcached_t *m);
 static void invalidatesocket(memcached_t *m);
 static ssize_t checkresult(lua_State *L, memcached_t *m, ssize_t result);
-static ssize_t sendnosig(lua_State *L, memcached_t *m, const void *buf, size_t len);
-static ssize_t sendmsgnosig(lua_State *L, memcached_t *m, const struct iovec *iov, int iovcnt);
+static int sendnosig(lua_State *L, memcached_t *m, const void *buf, size_t len);
+static int sendmsgnosig(lua_State *L, memcached_t *m, const struct iovec *iov, int iovcnt);
 static int recvnosig(lua_State *L, memcached_t *m, void *buf, size_t len);
 static int recvstring(lua_State *L, memcached_t *m, size_t len);
 
@@ -740,17 +740,44 @@ static ssize_t checkresult (lua_State *L, memcached_t *m, ssize_t result) {
 	}
 }
 
-static ssize_t sendnosig (lua_State *L , memcached_t *m, const void *buf, size_t len) {
-	return checkresult(L, m, send(m->fd, buf, len, MSG_NOSIGNAL));
+static int sendnosig (lua_State *L, memcached_t *m, const void *buf, size_t len) {
+	const char  *b;
+	ssize_t      result;
+
+	b = buf;
+	while (len > 0) {
+		result = checkresult(L, m, send(m->fd, b, len, MSG_NOSIGNAL));
+		b += result;
+		len -= result;
+	}
+	return 0;
 }
 
-static ssize_t sendmsgnosig (lua_State *L, memcached_t *m, const struct iovec *iov, int iovcnt) {
+static int sendmsgnosig (lua_State *L, memcached_t *m, const struct iovec *iov, int iovcnt) {
+	int            i;
+	size_t         sent;
+	ssize_t        result;
 	struct msghdr  msg;
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_iov = (struct iovec *)iov;
 	msg.msg_iovlen = iovcnt;
-	return checkresult(L, m, sendmsg(m->fd, &msg, MSG_NOSIGNAL));
+	do {
+		result = checkresult(L, m, sendmsg(m->fd, &msg, MSG_NOSIGNAL));
+	} while (result == 0);
+
+	/* complete an unexpected partial write without modifying the caller's iovec */
+	sent = (size_t)result;
+	for (i = 0; i < iovcnt && sent >= iov[i].iov_len; i++) {
+		sent -= iov[i].iov_len;
+	}
+	if (i < iovcnt) {
+		sendnosig(L, m, (const char *)iov[i].iov_base + sent, iov[i].iov_len - sent);
+		for (i++; i < iovcnt; i++) {
+			sendnosig(L, m, iov[i].iov_base, iov[i].iov_len);
+		}
+	}
+	return 0;
 }
 
 static int recvnosig (lua_State *L, memcached_t *m, void *buf, size_t len) {
