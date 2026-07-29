@@ -98,6 +98,7 @@ static int mdecode(lua_State *L);
 
 /* network */
 static int getsocket(lua_State *L, memcached_t *m);
+static void invalidatesocket(memcached_t *m);
 static ssize_t checkresult(lua_State *L, memcached_t *m, ssize_t result);
 static ssize_t sendnosig(lua_State *L, memcached_t *m, const void *buf, size_t len);
 static ssize_t sendmsgnosig(lua_State *L, memcached_t *m, const struct iovec *iov, int iovcnt);
@@ -712,6 +713,14 @@ static int getsocket (lua_State *L, memcached_t *m) {
 	return 0;
 }
 
+static void invalidatesocket (memcached_t *m) {
+	close(m->fd);
+	m->fd = -1;
+	if (!m->reconnect) {
+		m->closed = 1;
+	}
+}
+
 static ssize_t checkresult (lua_State *L, memcached_t *m, ssize_t result) {
 	int  err;
 
@@ -723,11 +732,7 @@ static ssize_t checkresult (lua_State *L, memcached_t *m, ssize_t result) {
 		/* interrupted by signal, try again */
 		return 0;
 	}
-	close(m->fd);
-	m->fd = -1;
-	if (!m->reconnect) {
-		m->closed = 1;
-	}
+	invalidatesocket(m);
 	if (result == 0) {
 		return luaL_error(L, "socket closed");
 	} else {
@@ -911,13 +916,19 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	/* receive */
 	recvnosig(L, m, &response, sizeof(response.bytes));
 	if (response.message.header.response.magic != PROTOCOL_BINARY_RES) {
-		close(m->fd);
-		m->fd = -1;
-		if (!m->reconnect) {
-			m->closed = 1;
-		}
+		invalidatesocket(m);
 		return luaL_error(L, "bad response");
 	}
+
+	/* lengths */
+	extlen = response.message.header.response.extlen;
+	keylen = be16toh(response.message.header.response.keylen);
+	bodylen = be32toh(response.message.header.response.bodylen);
+	if ((uint32_t)extlen + (uint32_t)keylen > bodylen) {
+		invalidatesocket(m);
+		return luaL_error(L, "bad response");
+	}
+	valuelen = bodylen - ((uint32_t)extlen + (uint32_t)keylen);
 
 	/* status */
 	if (status) {
@@ -931,7 +942,6 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 
 	/* extras */
 	nret = 0;
-	extlen = response.message.header.response.extlen;
 	if (extlen) {
 		recvstring(L, m, extlen);
 		if (flags & MEMCACHED_EXTRAS) {
@@ -942,7 +952,6 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	}
 
 	/* key */
-	keylen = be16toh(response.message.header.response.keylen);
 	if (keylen) {
 		recvstring(L, m, keylen);
 		if (flags & MEMCACHED_KEY) {
@@ -953,9 +962,7 @@ static int recvresponse (lua_State *L, memcached_t *m, uint16_t *status, uint64_
 	}
 
 	/* value */
-	bodylen = be32toh(response.message.header.response.bodylen);
-	if (bodylen > extlen + keylen) {
-		valuelen = bodylen - (extlen + keylen);
+	if (valuelen) {
 		if (flags & MEMCACHED_VALUE_BUFFER) {
 			b = lua_newuserdata(L, sizeof(memcached_buffer_t));
 			memset(b, 0, sizeof(memcached_buffer_t));
