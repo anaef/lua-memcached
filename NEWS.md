@@ -1,6 +1,11 @@
 # Lua memcached Release Notes
 
 
+## Release 1.1.1
+
+- Update security posture.
+
+
 ## Release 1.1.0 (2026-07-29)
 
 - Add Lua 5.5 to the tested versions.
